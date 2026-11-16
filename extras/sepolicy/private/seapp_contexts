@@ -1,0 +1,4 @@
+# nix_app (domain defined in patches/system/sepolicy): only com.termux.nix signed
+# with the key pinned in mac_permissions.xml (seinfo=nix_app). levelFrom=all like
+# untrusted_app_27 for targetSdk 28 (Nix-on-Droid), so its data keeps its labels.
+user=_app seinfo=nix_app name=com.termux.nix domain=nix_app type=app_data_file levelFrom=all

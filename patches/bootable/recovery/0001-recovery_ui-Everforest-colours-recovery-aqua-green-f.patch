@@ -1,0 +1,83 @@
+From 0fe7306dde969fa0c39346a2121166330339c2a8 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 15:54:14 +0000
+Subject: [PATCH] recovery_ui: Everforest colours (recovery aqua/green,
+ fastbootd orange/yellow)
+
+lineage-rango theme, matches the recolored images (extras/recovery/recovery-theme.sh).
+Recovery and fastbootd keep distinct colours so the mode is obvious.
+---
+ recovery_ui/screen_ui.cpp | 32 +++++++++++++-------------------
+ 1 file changed, 13 insertions(+), 19 deletions(-)
+
+diff --git a/recovery_ui/screen_ui.cpp b/recovery_ui/screen_ui.cpp
+index 0dcc4c6d..bc781d86 100644
+--- a/recovery_ui/screen_ui.cpp
++++ b/recovery_ui/screen_ui.cpp
+@@ -588,50 +588,44 @@ void ScreenRecoveryUI::draw_foreground_locked() {
+ void ScreenRecoveryUI::SetColor(UIElement e) const {
+   switch (e) {
+     case UIElement::BATTERY_LOW:
+-      if (fastbootd_logo_enabled_)
+-        gr_color(0xfd, 0x35, 0x35, 255);
+-      else
+-        gr_color(0xc7, 0x15, 0x85, 255);
++      gr_color(0xe6, 0x7e, 0x80, 255);  // Everforest red, both modes
+       break;
+     case UIElement::INFO:
+       if (fastbootd_logo_enabled_)
+-        gr_color(0xfd, 0xd8, 0x35, 255);
++        gr_color(0xdb, 0xbc, 0x7f, 255);  // Everforest yellow
+       else
+-        gr_color(0xf8, 0x90, 0xff, 255);
++        gr_color(0xa7, 0xc0, 0x80, 255);  // Everforest green
+       break;
+     case UIElement::HEADER:
+       if (fastbootd_logo_enabled_)
+-        gr_color(0xfd, 0xd8,0x35, 255);
++        gr_color(0xdb, 0xbc, 0x7f, 255);
+       else
+-        gr_color(0xf8, 0x90, 0xff, 255);
++        gr_color(0xa7, 0xc0, 0x80, 255);
+       break;
+     case UIElement::MENU:
+-      gr_color(0xd8, 0xd8, 0xd8, 255);
++      gr_color(0xd3, 0xc6, 0xaa, 255);  // Everforest fg
+       break;
+     case UIElement::MENU_BG:
+       if (fastbootd_logo_enabled_)
+-        gr_color(0xe6 * 0.20, 0x51 * 0.20, 0x00 * 0.20, 255);
++        gr_color(0xe6 * 0.20, 0x98 * 0.20, 0x75 * 0.20, 255);
+       else
+-        gr_color(0x7c * 0.20, 0x4d * 0.20, 0xff * 0.20, 255);
++        gr_color(0x83 * 0.20, 0xc0 * 0.20, 0x92 * 0.20, 255);
+       break;
+     case UIElement::MENU_SEL_BG:
+     case UIElement::SCROLLBAR:
+       if (fastbootd_logo_enabled_)
+-        gr_color(0xe6, 0x51, 0x00, 255);
++        gr_color(0xe6, 0x98, 0x75, 255);  // Everforest orange
+       else
+-        gr_color(0x7c, 0x4d, 0xff, 255);
++        gr_color(0x83, 0xc0, 0x92, 255);  // Everforest aqua
+       break;
+     case UIElement::MENU_SEL_BG_ACTIVE:
+-      gr_color(0, 156, 100, 255);
++      gr_color(0x7f, 0xbb, 0xb3, 255);  // Everforest blue
+       break;
+     case UIElement::MENU_SEL_FG:
+-      if (fastbootd_logo_enabled_)
+-        gr_color(0, 0, 0, 255);
+-      else
+-        gr_color(0xd8, 0xd8, 0xd8, 255);
++      gr_color(0x2d, 0x35, 0x3b, 255);  // Everforest bg: dark text on the light bars
+       break;
+     case UIElement::LOG:
+-      gr_color(196, 196, 196, 255);
++      gr_color(0x9d, 0xa9, 0xa0, 255);  // Everforest grey
+       break;
+     case UIElement::TEXT_FILL:
+       gr_color(0, 0, 0, 160);
+-- 
+2.51.2
+

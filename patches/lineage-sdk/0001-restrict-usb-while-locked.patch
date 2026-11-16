@@ -1,0 +1,39 @@
+From 5db529228cdef96ddd1987127fa59c67e78c726e Mon Sep 17 00:00:00 2001
+From: builder <builder@localhost>
+Date: Fri, 13 Nov 2026 03:28:10 +0000
+Subject: [PATCH] LineageSettingsProvider: default Restrict USB to 'while
+ locked'
+
+---
+ packages/LineageSettingsProvider/res/values/defaults.xml       | 3 +++
+ .../org/lineageos/lineagesettings/LineageDatabaseHelper.java   | 2 ++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/packages/LineageSettingsProvider/res/values/defaults.xml b/packages/LineageSettingsProvider/res/values/defaults.xml
+index 1d59bac..46cbfd6 100644
+--- a/packages/LineageSettingsProvider/res/values/defaults.xml
++++ b/packages/LineageSettingsProvider/res/values/defaults.xml
+@@ -76,4 +76,7 @@
+     <!-- Default for Settings.Global.DISABLE_WINDOW_BLURS -->
+     <integer name="def_disable_window_blurs">0</integer>
+ 
++    <!-- Restrict USB: 0 = never, 1 = while the screen is locked, 2 = always -->
++    <integer name="def_trust_restrict_usb">1</integer>
++
+ </resources>
+diff --git a/packages/LineageSettingsProvider/src/org/lineageos/lineagesettings/LineageDatabaseHelper.java b/packages/LineageSettingsProvider/src/org/lineageos/lineagesettings/LineageDatabaseHelper.java
+index 2057bee..8d81918 100644
+--- a/packages/LineageSettingsProvider/src/org/lineageos/lineagesettings/LineageDatabaseHelper.java
++++ b/packages/LineageSettingsProvider/src/org/lineageos/lineagesettings/LineageDatabaseHelper.java
+@@ -503,6 +503,8 @@ public class LineageDatabaseHelper extends SQLiteOpenHelper{
+             stmt = db.compileStatement("INSERT OR IGNORE INTO global(name,value)"
+                     + " VALUES(?,?);");
+             // Global
++            loadIntegerSetting(stmt, LineageSettings.Global.TRUST_RESTRICT_USB,
++                    R.integer.def_trust_restrict_usb);
+         } finally {
+             if (stmt != null) stmt.close();
+         }
+-- 
+2.51.2
+

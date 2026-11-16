@@ -1,0 +1,168 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 17:21:41 +0000
+Subject: [PATCH] policy: reboot a locked device that has not been unlocked for
+ a while
+
+AutoRebooter (lineage-rango): deadline = last ACTION_USER_PRESENT + timeout
+(Settings.Global auto_reboot_timeout_ms, default 18 h, 0 = off). At the deadline a
+locked device with a secure lock screen reboots, which returns credential-encrypted
+storage to its before-first-unlock state; a device in use is left alone and the next
+screen-off reboots after a one-minute grace period. Exact wakeup alarm allowed while
+idle; the reboot runs on the background thread.
+
+The receiver is EXPORTED: USER_PRESENT comes from SystemUI's uid, which a
+NOT_EXPORTED receiver never gets (first test build never armed, 2026-11-14). Each
+step logs under the tag AutoRebooter.
+---
+ .../android/server/policy/AutoRebooter.java   | 115 ++++++++++++++++++
+ .../server/policy/PhoneWindowManager.java     |   4 +
+ 2 files changed, 119 insertions(+)
+ create mode 100644 services/core/java/com/android/server/policy/AutoRebooter.java
+
+diff --git a/services/core/java/com/android/server/policy/AutoRebooter.java b/services/core/java/com/android/server/policy/AutoRebooter.java
+new file mode 100644
+index 0000000..885894f
+--- /dev/null
++++ b/services/core/java/com/android/server/policy/AutoRebooter.java
+@@ -0,0 +1,115 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ * lineage-rango: automatic reboot of a locked device (own implementation).
++ */
++
++package com.android.server.policy;
++
++import android.app.AlarmManager;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.os.Handler;
++import android.os.HandlerExecutor;
++import android.os.PowerManager;
++import android.os.SystemClock;
++import android.provider.Settings;
++import android.util.Slog;
++
++import com.android.internal.os.BackgroundThread;
++
++import java.util.function.BooleanSupplier;
++
++/**
++ * Reboots the device when it has not been unlocked for a while (default 18 h) and is
++ * locked at that moment. After the reboot the user's credential-encrypted storage is
++ * locked again (before first unlock), which is much harder to attack than a phone
++ * that has merely been locked since its last unlock.
++ *
++ * <ul>
++ *   <li>deadline = last unlock ({@link Intent#ACTION_USER_PRESENT}) + timeout</li>
++ *   <li>deadline reached while locked with a secure lock screen → reboot</li>
++ *   <li>deadline reached while in use → nothing; the next screen-off reboots after a
++ *       one-minute grace period if the device is locked then</li>
++ *   <li>never unlocked since boot → nothing to protect, no reboot</li>
++ * </ul>
++ * Setting: {@code adb shell settings put global auto_reboot_timeout_ms <ms>}, 0 = off.
++ */
++final class AutoRebooter {
++    private static final String TAG = "AutoRebooter";
++    static final String SETTING = "auto_reboot_timeout_ms";
++    private static final long DEFAULT_TIMEOUT_MS = 18L * 60 * 60 * 1000;
++    private static final long GRACE_MS = 60 * 1000;
++
++    private final Context mContext;
++    private final Handler mHandler;
++    private final BooleanSupplier mLockedAndSecure;
++    private final AlarmManager mAlarmManager;
++    private final AlarmManager.OnAlarmListener mListener = this::onAlarm;
++    /** elapsedRealtime of the last unlock, -1 = not unlocked since boot */
++    private long mLastUnlock = -1;
++
++    AutoRebooter(Context context, Handler handler, BooleanSupplier lockedAndSecure) {
++        mContext = context;
++        mHandler = handler;
++        mLockedAndSecure = lockedAndSecure;
++        mAlarmManager = context.getSystemService(AlarmManager.class);
++        IntentFilter filter = new IntentFilter(Intent.ACTION_USER_PRESENT);
++        filter.addAction(Intent.ACTION_SCREEN_OFF);
++        // EXPORTED: USER_PRESENT is sent by SystemUI (keyguard, its own uid), and a
++        // NOT_EXPORTED receiver only gets broadcasts from its own uid — the first build
++        // never saw an unlock (2026-11-14). Both actions are protected broadcasts, so
++        // only privileged system components can send them.
++        context.registerReceiver(mReceiver, filter, null, handler,
++                Context.RECEIVER_EXPORTED);
++        Slog.i(TAG, "armed, timeout " + timeout() / 60000 + " min");
++    }
++
++    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            final long now = SystemClock.elapsedRealtime();
++            final long timeout = timeout();
++            if (Intent.ACTION_USER_PRESENT.equals(intent.getAction())) {
++                mLastUnlock = now;
++                Slog.i(TAG, "unlocked, reboot if still locked in " + timeout / 60000 + " min");
++                schedule(now + timeout, timeout);
++            } else if (mLastUnlock >= 0 && timeout > 0 && now >= mLastUnlock + timeout) {
++                // screen off after the deadline passed while the device was in use
++                Slog.i(TAG, "screen off after the deadline, reboot in 1 min if locked");
++                schedule(now + GRACE_MS, timeout);
++            }
++        }
++    };
++
++    private long timeout() {
++        return Settings.Global.getLong(mContext.getContentResolver(), SETTING,
++                DEFAULT_TIMEOUT_MS);
++    }
++
++    private void schedule(long atElapsed, long timeout) {
++        mAlarmManager.cancel(mListener);
++        if (timeout <= 0) return;
++        mAlarmManager.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP,
++                atElapsed, TAG, new HandlerExecutor(mHandler), null, mListener);
++    }
++
++    private void onAlarm() {
++        final long timeout = timeout();
++        if (timeout <= 0 || mLastUnlock < 0) return;
++        final long deadline = mLastUnlock + timeout;
++        if (SystemClock.elapsedRealtime() < deadline) {
++            schedule(deadline, timeout);  // timeout was raised since scheduling
++            return;
++        }
++        if (!mLockedAndSecure.getAsBoolean()) {  // in use: next screen-off decides
++            Slog.i(TAG, "deadline reached but device in use, waiting for screen off");
++            return;
++        }
++        Slog.i(TAG, "not unlocked for " + timeout / 60000 + " min, rebooting");
++        // not on this handler: reboot() waits for the UI thread, which this may be
++        BackgroundThread.getHandler().post(
++                () -> mContext.getSystemService(PowerManager.class).reboot("auto_reboot"));
++    }
++}
+diff --git a/services/core/java/com/android/server/policy/PhoneWindowManager.java b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+index e17c6ae..3272d18 100644
+--- a/services/core/java/com/android/server/policy/PhoneWindowManager.java
++++ b/services/core/java/com/android/server/policy/PhoneWindowManager.java
+@@ -753,6 +753,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+     boolean mHavePendingMediaKeyRepeatWithWakeLock;
+ 
+     private int mCurrentUserId;
++    // lineage-rango: reboot when not unlocked for a while (AutoRebooter)
++    private AutoRebooter mAutoRebooter;
+ 
+     private AssistUtils mAssistUtils;
+ 
+@@ -6759,6 +6761,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
+             }
+         }
+         mLineageButtons = new LineageButtons(mContext);
++        mAutoRebooter = new AutoRebooter(mContext, mHandler,
++                () -> mKeyguardDelegate.isShowing() && mKeyguardDelegate.isSecure(mCurrentUserId));
+         mSideFpsEventHandler.onFingerprintSensorReady();
+         startedWakingUp(
+                 Display.DEFAULT_DISPLAY_GROUP,
+-- 
+2.51.2
+

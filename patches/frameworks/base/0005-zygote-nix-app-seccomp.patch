@@ -1,0 +1,95 @@
+From 22a09d4c90e6107a19ae94bdaeee2f77af158dca Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 09:00:00 +0000
+Subject: [PATCH] zygote: give the native-Nix app the syscalls glibc needs
+
+Android's app seccomp filter lacks set_robust_list and rseq (every glibc
+program calls both at startup -> SIGSYS), faccessat2 and fchmodat2. The one
+process for which MountNixStore bound /nix (ro.nix.package) gets bionic's
+set_app_nix_seccomp_filter() instead: the normal app filter plus those four
+calls. Every other app keeps the stock filter. lineage-rango docs/nix-design.md.
+---
+ core/jni/com_android_internal_os_Zygote.cpp | 26 ++++++++++++++-------
+ 1 file changed, 17 insertions(+), 9 deletions(-)
+
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index 9cb9671..a318e94 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -656,7 +656,9 @@ static void PreApplicationInit() {
+   mallopt(M_DECAY_TIME, 1);
+ }
+ 
+-static void SetUpSeccompFilter(uid_t uid, bool is_child_zygote) {
++// nix_app: the native-Nix package (MountNixStore bound /nix) additionally gets the few
++// syscalls glibc needs that the app filter lacks (lineage-rango docs/nix-design.md).
++static void SetUpSeccompFilter(uid_t uid, bool is_child_zygote, bool nix_app) {
+   if (!gIsSecurityEnforced) {
+     ALOGI("seccomp disabled by setenforce 0");
+     return;
+@@ -666,6 +668,8 @@ static void SetUpSeccompFilter(uid_t uid, bool is_child_zygote) {
+   if (uid >= AID_APP_START) {
+     if (is_child_zygote) {
+       set_app_zygote_seccomp_filter();
++    } else if (nix_app) {
++      set_app_nix_seccomp_filter();
+     } else {
+       set_app_seccomp_filter();
+     }
+@@ -1914,24 +1918,27 @@ static void BindMountStorageDirs(JNIEnv* env, jobjectArray pkg_data_info_list,
+ // image -- in its own mount namespace only (rootfs is MS_SLAVE here, so nothing
+ // propagates back). No new privileges: the store is the app's own app_data_file
+ // data, used by the app as itself. Every failure is logged and skipped, never fatal.
+-static void MountNixStore(uid_t uid, const std::optional<std::string>& app_data_dir) {
++// Returns true only if /nix was bound for this process (= the native-Nix app).
++static bool MountNixStore(uid_t uid, const std::optional<std::string>& app_data_dir) {
+   const std::string pkg = android::base::GetProperty("ro.nix.package", "");
+-  if (pkg.empty() || pkg.find('/') != std::string::npos || !app_data_dir.has_value()) return;
++  if (pkg.empty() || pkg.find('/') != std::string::npos || !app_data_dir.has_value()) return false;
+   const appid_t app_id = multiuser_get_app_id(uid);
+   // regular apps of user 0 only (no isolated / sdk sandbox / app zygote processes)
+-  if (app_id < AID_APP_START || app_id > AID_APP_END || multiuser_get_user_id(uid) != 0) return;
++  if (app_id < AID_APP_START || app_id > AID_APP_END || multiuser_get_user_id(uid) != 0) return false;
+   const std::string& dir = app_data_dir.value();
+-  if (dir != "/data/user/0/" + pkg && dir != "/data/data/" + pkg) return;
++  if (dir != "/data/user/0/" + pkg && dir != "/data/data/" + pkg) return false;
+   struct stat st;
+-  if (TEMP_FAILURE_RETRY(stat("/nix", &st)) == -1 || !S_ISDIR(st.st_mode)) return;
++  if (TEMP_FAILURE_RETRY(stat("/nix", &st)) == -1 || !S_ISDIR(st.st_mode)) return false;
+   if (TEMP_FAILURE_RETRY(stat(dir.c_str(), &st)) == -1 || !S_ISDIR(st.st_mode) ||
+       st.st_uid != uid) {
+     ALOGW("nix: %s missing or not owned by uid %d, /nix not mounted", dir.c_str(), uid);
+-    return;
++    return false;
+   }
+   if (TEMP_FAILURE_RETRY(mount(dir.c_str(), "/nix", nullptr, MS_BIND, nullptr)) == -1) {
+     ALOGW("nix: bind mount of %s on /nix failed: %s", dir.c_str(), strerror(errno));
++    return false;
+   }
++  return true;
+ }
+ 
+ // Utility routine to specialize a zygote child process.
+@@ -1992,8 +1999,9 @@ static void SpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray gids,
+ 
+         isolateJitProfile(env, pkg_data_info_list, uid, process_name, managed_nice_name, fail_fn);
+     }
++    bool nix_app = false;
+     if (!is_system_server && !is_child_zygote) {
+-        MountNixStore(uid, app_data_dir);
++        nix_app = MountNixStore(uid, app_data_dir);
+     }
+     // MOUNT_EXTERNAL_INSTALLER, MOUNT_EXTERNAL_PASS_THROUGH, MOUNT_EXTERNAL_ANDROID_WRITABLE apps
+     // will have mount_storage_dirs == false here (set by ProcessList.needsStorageDataIsolation()),
+@@ -2075,7 +2083,7 @@ static void SpecializeCommon(JNIEnv* env, uid_t uid, gid_t gid, jintArray gids,
+     // alternative is to call prctl(PR_SET_NO_NEW_PRIVS, 1) afterward, but that
+     // breaks SELinux domain transition (see b/71859146).  As the result,
+     // privileged syscalls used below still need to be accessible in app process.
+-    SetUpSeccompFilter(uid, is_child_zygote);
++    SetUpSeccompFilter(uid, is_child_zygote, nix_app);
+ 
+     // Must be called before losing the permission to set scheduler policy.
+     SetSchedulerPolicy(fail_fn, is_top_app);
+-- 
+2.51.2
+

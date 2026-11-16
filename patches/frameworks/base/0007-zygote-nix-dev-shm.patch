@@ -1,0 +1,50 @@
+From 4ffd27a9a7e79e446d2a7bb7d7944e70f2c1d7fb Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 11:00:00 +0000
+Subject: [PATCH] zygote: private /dev/shm tmpfs for the native-Nix app
+
+Android has no /dev/shm, so glibc's shm_open/sem_open (Python multiprocessing,
+some databases and browsers) fail natively. The root of /dev gets an empty
+/dev/shm from init (lineage-rango extras); for the process that got /nix,
+zygote mounts a 1 GB tmpfs there (nosuid, nodev, noexec, mode 0700, owned by
+the app) with context= the app data dir's label -- app_data_file with the app's
+MLS categories, the only label untrusted apps may create files with. Failure
+is logged, never fatal. /tmp can't get the same: it is shell_data_file, and
+zygote may only getattr app_data_file_type dirs (zygote.te neverallow).
+---
+ core/jni/com_android_internal_os_Zygote.cpp | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index 5253ce1..0c4ec2b 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -1944,6 +1944,25 @@ static bool MountNixStore(uid_t uid, const std::optional<std::string>& app_data_
+       TEMP_FAILURE_RETRY(mount("/system/bin", "/usr/bin", nullptr, MS_BIND, nullptr)) == -1) {
+     ALOGW("nix: bind mount of /system/bin on /usr/bin failed: %s", strerror(errno));
+   }
++  // Private tmpfs on /dev/shm (empty mountpoint created by init) for POSIX shared
++  // memory (glibc shm_open/sem_open, Python multiprocessing), labelled exactly like
++  // the app's data dir (app_data_file + its MLS categories) -- the only label an
++  // untrusted app may create files with. Per app namespace, RAM only, gone with the
++  // process. Failure is logged and skipped. (Not /tmp: it is shell_data_file, an
++  // app_data_file_type zygote may only getattr -- zygote.te neverallow.)
++  char* con = nullptr;
++  if (getfilecon(dir.c_str(), &con) > 0 && con != nullptr) {
++    for (const char* path : {"/dev/shm"}) {
++      if (TEMP_FAILURE_RETRY(stat(path, &st)) == -1 || !S_ISDIR(st.st_mode)) continue;
++      const std::string opts = StringPrintf("mode=0700,uid=%u,gid=%u,size=1g,context=\"%s\"",
++                                            uid, uid, con);
++      if (TEMP_FAILURE_RETRY(mount("tmpfs", path, "tmpfs", MS_NOSUID | MS_NODEV | MS_NOEXEC,
++                                   opts.c_str())) == -1) {
++        ALOGW("nix: tmpfs on %s (%s) failed: %s", path, con, strerror(errno));
++      }
++    }
++  }
++  if (con != nullptr) freecon(con);
+   return true;
+ }
+ 
+-- 
+2.51.2
+

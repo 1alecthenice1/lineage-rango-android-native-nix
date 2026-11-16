@@ -1,0 +1,36 @@
+From fd06b7c80bbcc122f09c29dbc8c0a714e8bbc7c7 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 09:30:00 +0000
+Subject: [PATCH] zygote: bind /system/bin on /usr/bin for the native-Nix app
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Scripts with `#!/usr/bin/env …` (most of them) need /usr/bin/env; Android has
+no /usr. The root image gets an empty /usr/bin mountpoint (lineage-rango
+extras), and the process that got /nix also gets /system/bin bound there, so
+toybox env resolves the interpreter from PATH. Other apps see the empty dir.
+---
+ core/jni/com_android_internal_os_Zygote.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/core/jni/com_android_internal_os_Zygote.cpp b/core/jni/com_android_internal_os_Zygote.cpp
+index a318e94..5253ce1 100644
+--- a/core/jni/com_android_internal_os_Zygote.cpp
++++ b/core/jni/com_android_internal_os_Zygote.cpp
+@@ -1938,6 +1938,12 @@ static bool MountNixStore(uid_t uid, const std::optional<std::string>& app_data_
+     ALOGW("nix: bind mount of %s on /nix failed: %s", dir.c_str(), strerror(errno));
+     return false;
+   }
++  // /usr/bin (empty mountpoint in the root image) = Android's /system/bin, so
++  // `#!/usr/bin/env …` scripts find toybox env. Only here, never fatal.
++  if (TEMP_FAILURE_RETRY(stat("/usr/bin", &st)) == 0 && S_ISDIR(st.st_mode) &&
++      TEMP_FAILURE_RETRY(mount("/system/bin", "/usr/bin", nullptr, MS_BIND, nullptr)) == -1) {
++    ALOGW("nix: bind mount of /system/bin on /usr/bin failed: %s", strerror(errno));
++  }
+   return true;
+ }
+ 
+-- 
+2.51.2
+

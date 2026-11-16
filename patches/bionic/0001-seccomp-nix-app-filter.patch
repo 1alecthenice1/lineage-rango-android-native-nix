@@ -1,0 +1,119 @@
+From 5b989fced125fd332d1b5b8b0d77a3515da5c35f Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 09:00:00 +0000
+Subject: [PATCH] seccomp: app filter variant for the native-Nix app
+
+set_app_nix_seccomp_filter() = the app filter plus set_robust_list, rseq,
+faccessat2, fchmodat2 and openat2 (64-bit), which glibc programs need (the
+first two at every program start) or which newer code calls with only an
+ENOSYS fallback. The extra checks are a separate block in front of the
+unchanged filter, so the 64->32-bit jump keeps its length. Only zygote's
+native-Nix process uses it (frameworks/base patch). lineage-rango
+docs/nix-design.md.
+---
+ libc/seccomp/include/seccomp_policy.h |  3 ++
+ libc/seccomp/seccomp_policy.cpp       | 51 +++++++++++++++++++++++++++
+ 2 files changed, 54 insertions(+)
+
+diff --git a/libc/seccomp/include/seccomp_policy.h b/libc/seccomp/include/seccomp_policy.h
+index 383c42e..b0fd4fc 100644
+--- a/libc/seccomp/include/seccomp_policy.h
++++ b/libc/seccomp/include/seccomp_policy.h
+@@ -23,6 +23,9 @@
+ bool set_app_seccomp_filter();
+ bool set_app_zygote_seccomp_filter();
+ bool set_system_seccomp_filter();
++// lineage-rango: the app filter plus the few syscalls glibc needs (set_robust_list,
++// rseq, faccessat2, fchmodat2, openat2), for the native-Nix app only (zygote decides).
++bool set_app_nix_seccomp_filter();
+ 
+ // Installs a filter that limits setresuid/setresgid to a range of
+ // [uid_gid_min..uid_gid_max] (for the real-, effective- and super-ids).
+diff --git a/libc/seccomp/seccomp_policy.cpp b/libc/seccomp/seccomp_policy.cpp
+index 1ca4eec..42913b6 100644
+--- a/libc/seccomp/seccomp_policy.cpp
++++ b/libc/seccomp/seccomp_policy.cpp
+@@ -231,8 +231,49 @@ enum FilterType {
+   APP,
+   APP_ZYGOTE,
+   SYSTEM,
++  APP_NIX,
+ };
+ 
++// lineage-rango (docs/nix-design.md): syscalls glibc programs make that the app
++// filter lacks -- set_robust_list + rseq at every program start (SIGSYS otherwise),
++// faccessat2 (faccessat), fchmodat2 (fchmodat with flags), openat2 (Go os.Root,
++// newer Rust/systemd code; same checks as openat). 64-bit only.
++#if defined(__aarch64__)
++#ifndef __NR_rseq
++#define __NR_rseq 293
++#endif
++#ifndef __NR_openat2
++#define __NR_openat2 437
++#endif
++#ifndef __NR_faccessat2
++#define __NR_faccessat2 439
++#endif
++#ifndef __NR_fchmodat2
++#define __NR_fchmodat2 452
++#endif
++static const long nix_app_extra_syscalls[] = {
++    __NR_set_robust_list, __NR_rseq, __NR_faccessat2, __NR_fchmodat2, __NR_openat2,
++};
++static const size_t nix_app_extra_syscalls_size = arraysize(nix_app_extra_syscalls);
++#else
++static const long* const nix_app_extra_syscalls = nullptr;
++static const size_t nix_app_extra_syscalls_size = 0;
++#endif
++
++// A separate block IN FRONT of the normal filter: "primary arch and one of these
++// syscalls -> allow", else fall through to the unchanged filter. Kept out of the
++// primary section so the 64->32-bit jump (max 255) stays as long as before.
++static void AllowExtraPrimarySyscalls(filter& f, const long* nrs, size_t n) {
++    if (n == 0) return;
++    f.push_back(BPF_STMT(BPF_LD|BPF_W|BPF_ABS, arch_nr));
++    f.push_back(BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, PRIMARY_ARCH, 0, (__u8)(1 + 2 * n)));
++    ExamineSyscall(f);
++    for (size_t i = 0; i < n; ++i) {
++        f.push_back(BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, (__u32)nrs[i], 0, 1));
++        Allow(f);
++    }
++}
++
+ bool _set_seccomp_filter(FilterType type) {
+     filter f;
+ 
+@@ -244,6 +285,7 @@ bool _set_seccomp_filter(FilterType type) {
+ #endif
+ 
+     switch (type) {
++      case APP_NIX:
+       case APP:
+         p = primary_app_filter;
+         p_size = primary_app_filter_size;
+@@ -270,6 +312,11 @@ bool _set_seccomp_filter(FilterType type) {
+         break;
+     }
+ 
++    if (type == APP_NIX) {
++        static_assert(nix_app_extra_syscalls_size < 100, "jump must fit in 8 bits");
++        AllowExtraPrimarySyscalls(f, nix_app_extra_syscalls, nix_app_extra_syscalls_size);
++    }
++
+ #if defined(SECONDARY_ARCH)
+     // Note that for mixed 64/32 bit architectures, ValidateArchitecture inserts a
+     // jump that must be changed to point to the start of the 32-bit policy
+@@ -306,6 +353,10 @@ bool set_app_seccomp_filter() {
+     return _set_seccomp_filter(FilterType::APP);
+ }
+ 
++bool set_app_nix_seccomp_filter() {
++    return _set_seccomp_filter(FilterType::APP_NIX);
++}
++
+ bool set_app_zygote_seccomp_filter() {
+     return _set_seccomp_filter(FilterType::APP_ZYGOTE);
+ }
+-- 
+2.51.2
+

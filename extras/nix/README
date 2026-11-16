@@ -1,0 +1,3 @@
+Mountpoint for a native Nix store (lineage-rango, docs/nix-design.md).
+Zygote bind-mounts the data directory of the package in ro.nix.package here,
+inside that app's own mount namespace only. Everywhere else this stays empty.

@@ -1,0 +1,29 @@
+From 39b267579f187c9bdf9db19cc2144c2cd105fe25 Mon Sep 17 00:00:00 2001
+From: lineage-rango <lineage-rango@localhost>
+Date: Fri, 13 Nov 2026 16:27:45 +0000
+Subject: [PATCH] Drop Velvet (Google app / Gemini host)
+
+User choice: Claude is the digital assistant, no Gemini on the phone.
+Keeps Play services, Play Store, GSF, sync adapters, SpeechServicesByGoogle.
+Also gone with it: Google search widget, Lens, Circle to Search,
+"Hey Google" (the HotwordEnrollment*Google apps from the device blobs
+stay but have nothing to talk to).
+---
+ arm64/arm64-vendor.mk | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arm64/arm64-vendor.mk b/arm64/arm64-vendor.mk
+index 8880865..6ac3151 100644
+--- a/arm64/arm64-vendor.mk
++++ b/arm64/arm64-vendor.mk
+@@ -14,7 +14,6 @@ PRODUCT_PACKAGES += \
+     MarkupGoogle_v2 \
+     SetupWizard \
+     SpeechServicesByGoogle \
+-    Velvet \
+     talkback
+ endif
+ 
+-- 
+2.51.2
+

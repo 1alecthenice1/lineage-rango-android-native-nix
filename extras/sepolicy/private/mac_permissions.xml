@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- nix_app (lineage-rango): seinfo for Nix-on-Droid, pinned to its signing key.
+     Certificate: F-Droid's per-app key for com.termux.nix (CN=FDroid, SHA-256
+     f56bca16b6ff24cc70c38b97f3fd5cadccac81e5a3681218130979374eb8c285, read from
+     the installed APK 2026-11-15). A build signed with another key (GitHub
+     release, own build) gets no seinfo here and stays in untrusted_app_*. -->
+<policy>
+  <signer signature="@NIX_ON_DROID">
+    <package name="com.termux.nix">
+      <seinfo value="nix_app" />
+    </package>
+  </signer>
+</policy>

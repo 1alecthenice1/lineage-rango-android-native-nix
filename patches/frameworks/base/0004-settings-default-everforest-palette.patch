@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 16:46:09 +0000
+Subject: [PATCH] settings: default system palette Everforest aqua
+ (lineage-rango)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+theme_customization_overlay_packages on first boot: preset palette
+#83C092, TONAL_SPOT — matches the default flow wallpaper (tested on rango
+2026-11-14 by setting it over adb). Wallpaper & style can still change it.
+---
+ .../com/android/providers/settings/DatabaseHelper.java    | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java b/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
+index dc2285f..db51b10 100644
+--- a/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
++++ b/packages/SettingsProvider/src/com/android/providers/settings/DatabaseHelper.java
+@@ -2186,6 +2186,14 @@ class DatabaseHelper extends SQLiteOpenHelper {
+             loadSetting(stmt, Settings.Secure.ALLOW_MOCK_LOCATION,
+                     "1".equals(SystemProperties.get("ro.allow.mock.location")) ? 1 : 0);
+ 
++            // lineage-rango: default system palette = Everforest aqua (#83C092), which
++            // matches the default flow wallpaper; Wallpaper & style can still change it
++            loadSetting(stmt, "theme_customization_overlay_packages",
++                    "{\"android.theme.customization.system_palette\":\"FF83C092\","
++                    + "\"android.theme.customization.accent_color\":\"FF83C092\","
++                    + "\"android.theme.customization.color_source\":\"preset\","
++                    + "\"android.theme.customization.theme_style\":\"TONAL_SPOT\"}");
++
+             loadSecure35Settings(stmt);
+ 
+             loadBooleanSetting(stmt, Settings.Secure.MOUNT_PLAY_NOTIFICATION_SND,
+-- 
+2.51.2
+

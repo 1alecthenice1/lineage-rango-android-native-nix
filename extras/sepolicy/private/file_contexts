@@ -1,0 +1,7 @@
+/nix(/.*)?    u:object_r:nix_mnt_file:s0
+# /usr: plain system dir so every app may traverse it; /usr/bin: zygote mounts
+# /system/bin on it for the Nix app (same type as /nix — zygote may mounton it)
+/usr          u:object_r:system_file:s0
+/usr/bin(/.*)?    u:object_r:nix_mnt_file:s0
+# /dev/shm: created by init (nix.rc); zygote mounts the Nix app's private tmpfs on it
+/dev/shm      u:object_r:nix_shm_mnt:s0

@@ -1,0 +1,41 @@
+From 75bed001c03ada847752b6afab37abfd910a1d45 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 23:25:18 +0000
+Subject: [PATCH] SfpsEnrollmentFeatureImpl: fall back to the framework's
+ vendor fingerprint strings
+
+Settings' own fingerprint_acquired_vendor array is empty unless a device
+overlays it for Settings. LineageOS device trees (e.g. rango) overlay and
+translate it for the framework only, so getVendorString(ctx, 0) threw at the
+moment the HAL paused the enrollment. Use the framework's array when Settings
+has none.
+
+Tested on rango (Pixel 10 Pro Fold), LineageOS 24 (own build, 2026-11-16):
+repeated touches on one spot -> HAL "Report pause enrollment message" ->
+handleOnEnrollmentHelp(1000) -> dialog with the framework string ->
+OK -> HAL "Resume Enrollment process" -> enrollment completes.
+---
+ .../fingerprint/feature/SfpsEnrollmentFeatureImpl.java     | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/com/android/settings/biometrics/fingerprint/feature/SfpsEnrollmentFeatureImpl.java b/src/com/android/settings/biometrics/fingerprint/feature/SfpsEnrollmentFeatureImpl.java
+index a70144d..aa148db 100644
+--- a/src/com/android/settings/biometrics/fingerprint/feature/SfpsEnrollmentFeatureImpl.java
++++ b/src/com/android/settings/biometrics/fingerprint/feature/SfpsEnrollmentFeatureImpl.java
+@@ -200,6 +200,13 @@ public class SfpsEnrollmentFeatureImpl implements SfpsEnrollmentFeature {
+ 
+     private static String getVendorString(Context ctx, int index) {
+         String[] strings = ctx.getResources().getStringArray(R.array.fingerprint_acquired_vendor);
++        if (index >= strings.length) {
++            // Device trees usually provide (and translate) the vendor messages for the
++            // framework only, e.g. LineageOS rango's FrameworkResOverlay. Without this
++            // fallback the empty Settings array made the pause dialog throw.
++            strings = ctx.getResources().getStringArray(
++                    com.android.internal.R.array.fingerprint_acquired_vendor);
++        }
+         Preconditions.checkArgumentInRange(index, 0, strings.length - 1, "vendor string index");
+         return strings[index];
+     }
+-- 
+2.51.2
+

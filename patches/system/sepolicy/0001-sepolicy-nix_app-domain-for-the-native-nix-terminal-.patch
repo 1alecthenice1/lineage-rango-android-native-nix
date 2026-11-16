@@ -1,0 +1,227 @@
+From bccc99c15e6e7bf7baf473b486ef3dc04cee5652 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 23:04:56 +0000
+Subject: [PATCH] sepolicy: nix_app domain for the native-/nix terminal app
+
+lineage-rango: a dedicated domain for Nix-on-Droid (assigned only with
+seinfo=nix_app = its pinned signing key, see vendor/extras sepolicy) instead of
+loosening untrusted_app_all:
+
+- same rules as untrusted_app_27 (the app targets SDK 28), with every
+  untrusted_app_27 neverallow exception mirrored
+- hard links within its own app data (Nix store); the neverallow keeps all other
+  untrusted apps out and limits nix_app to app_data_file
+- termios2 ioctls (TCGETS2 ...) on ptys for glibc >= 2.42
+- no auditallow on exec of app data files (log spam)
+---
+ private/app.te             |  2 +
+ private/app_neverallows.te | 11 ++++-
+ private/domain.te          |  2 +
+ private/nix_app.te         | 84 ++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 98 insertions(+), 1 deletion(-)
+ create mode 100644 private/nix_app.te
+
+diff --git a/private/app.te b/private/app.te
+index a8a3c04..7ae6240 100644
+--- a/private/app.te
++++ b/private/app.te
+@@ -845,6 +845,7 @@ neverallow {
+   appdomain
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+   -untrusted_app_32
+@@ -853,6 +854,7 @@ neverallow {
+   appdomain
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+   -untrusted_app_32
+diff --git a/private/app_neverallows.te b/private/app_neverallows.te
+index f9f2bbe..d94d326 100644
+--- a/private/app_neverallows.te
++++ b/private/app_neverallows.te
+@@ -69,6 +69,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -runas_app
+ } { app_data_file privapp_data_file }:file execute_no_trans;
+ 
+@@ -94,6 +95,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+ } dex2oat_exec:file no_x_file_perms;
+ 
+ # Do not allow untrusted apps to be assigned mlstrustedsubject.
+@@ -112,7 +114,9 @@ neverallow { all_untrusted_apps -mediaprovider_app } mlstrustedsubject:process f
+ # of the linked to file. Hard links also contribute to security
+ # bugs, so we want to ensure untrusted apps never have this
+ # capability.
+-neverallow all_untrusted_apps file_type:file link;
++neverallow { all_untrusted_apps -nix_app } file_type:file link;
++# nix_app (lineage-rango): hard links only within its own app data
++neverallow nix_app { file_type -app_data_file }:file link;
+ 
+ # Do not allow untrusted apps to access network MAC address file
+ neverallow all_untrusted_apps sysfs_net:file no_rw_file_perms;
+@@ -155,6 +159,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+ } domain:netlink_route_socket nlmsg_getneigh;
+@@ -162,6 +167,7 @@ neverallowxperm {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+ } domain:netlink_route_socket nlmsg RTM_GETNEIGH;
+@@ -281,6 +287,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+ } mnt_sdcard_file:lnk_file *;
+ 
+ # Only privileged apps may find the incident service
+@@ -313,6 +320,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+   -untrusted_app_32
+@@ -321,6 +329,7 @@ neverallow {
+   all_untrusted_apps
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   -untrusted_app_29
+   -untrusted_app_30
+   -untrusted_app_32
+diff --git a/private/domain.te b/private/domain.te
+index 7d5869e..1c27f57 100644
+--- a/private/domain.te
++++ b/private/domain.te
+@@ -1414,6 +1414,7 @@ neverallow {
+   domain
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+   userdebug_or_eng(`-overlay_remounter')
+ } file_type:file execmod;
+ 
+@@ -1668,6 +1669,7 @@ neverallow {
+   -ephemeral_app # We don't distinguish ephemeral apps based on target API.
+   -untrusted_app_25
+   -untrusted_app_27
++  -nix_app
+ } ashmem_device:chr_file open;
+ 
+ neverallow {
+diff --git a/private/nix_app.te b/private/nix_app.te
+new file mode 100644
+index 0000000..a741190
+--- /dev/null
++++ b/private/nix_app.te
+@@ -0,0 +1,84 @@
++###
++### nix_app (lineage-rango): the native-/nix terminal app.
++###
++### Assigned by seapp_contexts only to the package named there AND signed with the
++### certificate pinned in mac_permissions.xml (seinfo=nix_app) — a same-named app
++### with another key stays in untrusted_app_*. Same rules as untrusted_app_27
++### (Nix-on-Droid targets SDK 28) plus:
++###   - hard links inside its own data dir (the store lives there; Nix needs
++###     link() for auto-optimise-store and for builds that create hard links).
++###     app_neverallows.te still forbids every other untrusted app, and nix_app
++###     any other file type.
++###   - glibc >= 2.42 terminal ioctls (termios2) on ptys — see below.
++### Design + reasons: lineage-rango docs/nix-design.md.
++
++type nix_app, domain;
++typeattribute nix_app coredomain;
++
++
++app_domain(nix_app)
++untrusted_app_domain(nix_app)
++net_domain(nix_app)
++bluetooth_domain(nix_app)
++
++# Text relocation support for API < 23. This is now disallowed for targetSdkVersion>=Q.
++# https://android.googlesource.com/platform/bionic/+/master/android-changes-for-ndk-developers.md#text-relocations-enforced-for-api-level-23
++allow nix_app { apk_data_file app_data_file asec_public_file }:file execmod;
++
++# The ability to call exec() on files in the apps home directories
++# for targetApi 26, 27, and 28.
++allow nix_app app_data_file:file execute_no_trans;
++# (no auditallow here: every exec of a store binary would log an avc "granted" —
++# that spam rotated logcat's main buffer within minutes on builds 7-9)
++
++# The ability to invoke dex2oat. Historically required by ART, now only
++# allowed for targetApi<=28 for compat reasons.
++allow nix_app dex2oat_exec:file rx_file_perms;
++userdebug_or_eng(`auditallow nix_app dex2oat_exec:file rx_file_perms;')
++
++# The ability to talk to /dev/ashmem directly. targetApi>=29 must use
++# ASharedMemory instead.
++allow nix_app ashmem_device:chr_file rw_file_perms;
++auditallow nix_app ashmem_device:chr_file open;
++
++# Read /mnt/sdcard symlink.
++allow nix_app mnt_sdcard_file:lnk_file r_file_perms;
++
++# allow sending RTM_GETNEIGH{TBL} messages.
++allow nix_app self:netlink_route_socket nlmsg_getneigh;
++auditallow nix_app self:netlink_route_socket nlmsg_getneigh;
++allowxperm nix_app self:netlink_route_socket nlmsg { RTM_GETNEIGH RTM_GETNEIGHTBL };
++auditallowxperm nix_app self:netlink_route_socket nlmsg { RTM_GETNEIGH RTM_GETNEIGHTBL };
++
++# Connect to mdnsd via mdnsd socket.
++unix_socket_connect(nix_app, mdnsd, mdnsd)
++userdebug_or_eng(`
++  auditallow nix_app mdnsd_socket:sock_file write;
++  auditallow nix_app mdnsd:unix_stream_socket connectto;
++')
++
++# Allow calling inotify on APKs for backwards compatibility. This is disallowed
++# for targetSdkVersion>=34 to remove a sidechannel.
++allow nix_app apk_data_file:dir { watch watch_reads };
++allow nix_app apk_data_file:file { watch watch_reads };
++userdebug_or_eng(`
++  auditallow nix_app apk_data_file:dir { watch watch_reads };
++  auditallow nix_app apk_data_file:file { watch watch_reads };
++')
++
++allow nix_app domain:memfd_file ioctl;
++allowxperm nix_app domain:memfd_file ioctl ashmem_ioctls;
++allow nix_app ashmem_libcutils_device:chr_file open;
++
++# Hard links within the app's own data (MLS categories keep it to this app's files).
++allow nix_app app_data_file:file link;
++
++# Terminal ioctls: domain.te limits every domain to unpriv_tty_ioctls on ptys
++# (TCGETS/TCSETS*); glibc >= 2.42 implements tcgetattr/tcsetattr with the termios2
++# variants (TCGETS2 = 0x542a …) → native glibc bash had no prompt/line editing and
++# Nix's builder failed "getting pseudoterminal attributes" (build 9, 2026-11-15).
++# Same operations, larger struct; the only pty neverallow is TIOCSTI.
++# App ptys are labelled untrusted_app_all_devpts (type_transition in AOSP's
++# untrusted_app_all.te), not devpts: build 10 put this rule on devpts and it never
++# applied — bash stayed non-interactive (isatty → TCGETS2), and the denial isn't logged.
++allowxperm nix_app untrusted_app_all_devpts:chr_file ioctl { TCGETS2 TCSETS2 TCSETSW2 TCSETSF2 };
+-- 
+2.51.2
+

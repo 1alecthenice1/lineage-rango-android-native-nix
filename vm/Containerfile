@@ -1,0 +1,30 @@
+# LineageOS build environment = what LineageOS documents (wiki: "Install the build
+# packages", Ubuntu), on a pinned Ubuntu 24.04. Runs rootless in podman on the
+# NixOS build VM with /src mounted (steps/build.sh, BUILD_ENV=container).
+FROM docker.io/library/ubuntu:24.04@sha256:2198e4c65076e9cb0b3d695219df667c0e3b0072da64ca3c2648aca17dcecaf5
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Packages from a dated Ubuntu archive snapshot (snapshot.ubuntu.com) → the same
+# versions every time. Only ca-certificates (needed for the HTTPS snapshot
+# service) comes from the live mirror. Bump deliberately.
+ARG APT_SNAPSHOT=20261113T000000Z
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates \
+ && apt-get update --snapshot "$APT_SNAPSHOT" \
+ && apt-get install --snapshot "$APT_SNAPSHOT" -y --no-install-recommends \
+      # LineageOS wiki package list (lineage_wiki device_build_before_init.md)
+      bc bison build-essential ccache curl erofs-utils flex g++-multilib gcc-multilib \
+      git git-lfs gnupg gperf imagemagick kmod protobuf-compiler python3-protobuf \
+      lib32readline-dev lib32z1-dev libdw-dev libelf-dev libgnutls28-dev lz4 \
+      libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+      squashfs-tools xsltproc xxd yasm zip zlib1g-dev \
+      python-is-python3 \
+      # repo tool + what extract-utils / lineage/scripts import
+      repo python3-lxml python3-bs4 python3-cryptography python3-git python3-ply \
+      python3-py7zr python3-yaml python3-requests \
+      # extract-utils unpacks ramdisks (recovery from vendor_boot) and images
+      cpio e2fsprogs brotli zstd \
+      ca-certificates openssh-client unzip xz-utils procps tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LC_ALL=C.UTF-8 ALLOW_NINJA_ENV=true USE_CCACHE=0
+WORKDIR /src

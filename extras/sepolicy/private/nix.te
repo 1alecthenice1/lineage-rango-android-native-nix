@@ -1,0 +1,29 @@
+# Native /nix (docs/nix-design.md, option Z). The mountpoint in the root image
+# gets its own type: NOT system_file_type — AOSP forbids mounton on those for
+# zygote in user builds. The store itself is the app's app_data_file data.
+type nix_mnt_file, file_type;
+allow zygote nix_mnt_file:dir { getattr mounton };
+
+# ro.nix.package: which app gets /nix (set at build time, read by zygote)
+system_internal_prop(nix_config_prop)
+get_prop(zygote, nix_config_prop)
+
+# /dev/shm (patch 0007): init creates the empty mountpoint; zygote mounts a tmpfs on
+# it for the Nix app with context= the app data dir's label (app_data_file + MLS
+# categories), the only label an untrusted app may create files with. Other apps
+# can't even look into the empty dir.
+type nix_shm_mnt, dev_type;
+allow nix_shm_mnt tmpfs:filesystem associate;
+allow init nix_shm_mnt:dir { create getattr setattr search };
+allow zygote nix_shm_mnt:dir { getattr search mounton };
+allow zygote tmpfs:filesystem relabelfrom;
+# a context= mount also checks relabelfrom AND mount against the NEW label (kernel
+# may_context_mount_inode_relabel / sb_kern_mount): build 9 lacked relabelfrom →
+# "nix: tmpfs on /dev/shm (…) failed: Permission denied" (2026-11-15). Allowed:
+# domain.te's filesystem neverallow excludes zygote, app_data_file isn't an fs_type.
+allow zygote app_data_file:filesystem { mount relabelfrom relabelto };
+allow app_data_file app_data_file:filesystem associate;
+
+# Terminal ioctls (TCGETS2 …) and hard links: in the nix_app domain
+# (patches/system/sepolicy/0001-nix_app-domain.patch) since build 11. Build 10 had an
+# ioctl rule here on `devpts` — ineffective: app ptys are untrusted_app_all_devpts.

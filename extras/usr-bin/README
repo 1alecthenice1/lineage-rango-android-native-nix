@@ -1,0 +1,2 @@
+Mountpoint (lineage-rango, docs/nix-design.md): for the native-Nix app only, zygote
+bind-mounts /system/bin here so `#!/usr/bin/env …` scripts work. Empty elsewhere.
