@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Art feed: the page left of the home screen ("minus one"), showing public-domain
+     artwork from museum open-access collections instead of Google's news feed.
+     Served to the launcher over the launcher-overlay protocol (OverlayService);
+     the launcher patch in patches/packages/apps/Launcher3 points at this package. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="lineage.rango.artfeed"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- privileged (privapp-permissions-lineage.rango.artfeed.xml): "open in browser"
+         from the overlay window, which Android otherwise treats as a background start -->
+    <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
+    <!-- the home app that may bind the overlay (OverlayService checks the caller) -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:icon="@drawable/ic_artfeed"
+        android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <service
+            android:name=".OverlayService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.launcher3.WINDOW_OVERLAY" />
+                <data android:scheme="app" />
+            </intent-filter>
+        </service>
+
+        <!-- Stand-alone view of the feed (and a test client for the overlay protocol):
+             adb shell am start -n lineage.rango.artfeed/.PreviewActivity -->
+        <activity
+            android:name=".PreviewActivity"
+            android:exported="true"
+            android:label="@string/app_name" />
+    </application>
+</manifest>

@@ -61,6 +61,8 @@ optional at signing time, off since build 10).
 | Restrict USB while locked by default | `patches/lineage-sdk` |
 | Own boot animation + wallpaper | `extras/` |
 | Native `/nix` for one app (Nix without proot): zygote bind + seccomp + `/usr/bin` + `/dev/shm`, `nix_app` SELinux domain pinned to Nix-on-Droid's F-Droid key, phantom process killer off | `patches/{bionic,frameworks/base,system/sepolicy}`, `extras/`, [android-native-nix](https://github.com/1alecthenice1/android-native-nix), [docs/nix-design.md](docs/nix-design.md) |
+| Quick Share extension keeps Google's signature (build 12+) | `patches/device/google/rango` — see below |
+| Art feed instead of Google's news on the page left of the home screen (build 12+): public-domain works from The Met + Cleveland Museum of Art, all departments in shuffled rotation | `extras/ArtFeed`, `patches/packages/apps/Launcher3`; dev build + phone install: `steps/artfeed-dev.sh` |
 | `user` build variant | not `userdebug` like official builds |
 
 ## Findings worth knowing (Android 17 / LineageOS 24 / rango)
@@ -111,6 +113,14 @@ optional at signing time, off since build 10).
   `/nix` mountpoint in that app's mount namespace needs one new type and one
   `mounton` rule, and no neverallow change. rango's GKI kernel has no user
   namespaces (no NNS-style launcher, no Nix sandbox).
+- **Quick Share extension (`MoseyApp`, `com.google.android.mosey`)** is listed in
+  rango's `proprietary-files.txt` without `;PRESIGNED`, so every LineageOS build
+  re-signs it with the platform key. Play services' Nearby Share API then refuses
+  it ("SecurityException: Denied access to unsuspend method") and it crash-loops
+  every ~12 s (2,645 crashes in 2 days on build 11) — Quick Share drops at random.
+  Build 11 workaround on the phone: `adb shell pm disable-user --user 0
+  com.google.android.mosey` (re-enable with `pm enable` after build 12).
+  `steps/check-build.sh` checks the PRESIGNED entry.
 - **Root image extras** need `PRODUCT_ARTIFACT_PATH_REQUIREMENT_ALLOWED_LIST`.
 
 ## Cost

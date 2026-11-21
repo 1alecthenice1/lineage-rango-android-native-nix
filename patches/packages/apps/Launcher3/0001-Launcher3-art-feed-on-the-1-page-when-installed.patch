@@ -1,0 +1,131 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sat, 21 Nov 2026 03:33:45 +0000
+Subject: [PATCH] Launcher3: art feed on the -1 page when installed
+
+When lineage.rango.artfeed (vendor/extras/ArtFeed) is installed and enabled,
+the launcher overlay client connects to it instead of the Google app.
+libGoogleFeed.jar hard-codes the Google app's package in LauncherClient's
+ClientOptions (private non-final String field "b", read when connecting) and
+offers no setter, so it is set by reflection; a keep rule stops R8 from
+renaming the field or propagating its constant. Settings shows the -1 switch
+as "Show art feed" in that case. Without the app nothing changes.
+---
+ proguard.flags                                |  6 +++++
+ .../uioverrides/OverlayCallbackImpl.java      | 23 ++++++++++++++++++-
+ res/values/lineage_strings.xml                |  1 +
+ .../launcher3/settings/SettingsActivity.java  |  6 +++++
+ 4 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/proguard.flags b/proguard.flags
+index f6b119e..019452f 100644
+--- a/proguard.flags
++++ b/proguard.flags
+@@ -78,3 +78,9 @@
+     <fields>;
+     <init>(...);
+ }
++
++# Art feed (vendor/extras/ArtFeed): OverlayCallbackImpl writes the overlay service
++# package into this field by reflection; keep it (name, and no constant propagation)
++-keepclassmembers class com.google.android.libraries.gsa.launcherclient.LauncherClient$ClientOptions {
++    java.lang.String b;
++}
+diff --git a/quickstep/src/com/android/launcher3/uioverrides/OverlayCallbackImpl.java b/quickstep/src/com/android/launcher3/uioverrides/OverlayCallbackImpl.java
+index 4343200..df5b4b7 100644
+--- a/quickstep/src/com/android/launcher3/uioverrides/OverlayCallbackImpl.java
++++ b/quickstep/src/com/android/launcher3/uioverrides/OverlayCallbackImpl.java
+@@ -20,7 +20,10 @@ import android.app.Activity;
+ import android.app.Application;
+ import android.content.SharedPreferences;
+ import android.content.SharedPreferences.OnSharedPreferenceChangeListener;
++import android.content.pm.LauncherApps;
+ import android.os.Bundle;
++import android.os.Process;
++import android.util.Log;
+ import android.view.MotionEvent;
+ import android.view.View;
+ 
+@@ -34,6 +37,7 @@ import com.google.android.libraries.gsa.launcherclient.LauncherClient;
+ import com.google.android.libraries.gsa.launcherclient.LauncherClientCallbacks;
+ 
+ import java.io.PrintWriter;
++import java.lang.reflect.Field;
+ 
+ /**
+  * Implements {@link LauncherOverlayTouchProxy} and passes all the corresponding events to {@link
+@@ -48,6 +52,10 @@ public class OverlayCallbackImpl
+         Application.ActivityLifecycleCallbacks, View.OnAttachStateChangeListener {
+ 
+     private static final String KEY_ENABLE_MINUS_ONE = "pref_enable_minus_one";
++    // Art feed (vendor/extras/ArtFeed) serves the -1 page when installed; otherwise
++    // the Google app does, as before
++    private static final String FEED_PACKAGE = "lineage.rango.artfeed";
++    private static final String TAG = "OverlayCallbackImpl";
+ 
+     private final Launcher mLauncher;
+     private final LauncherClient mClient;
+@@ -181,10 +189,23 @@ public class OverlayCallbackImpl
+     }
+ 
+     private LauncherClient.ClientOptions getClientOptions(SharedPreferences prefs) {
+-        return new LauncherClient.ClientOptions(
++        LauncherClient.ClientOptions options = new LauncherClient.ClientOptions(
+                 prefs.getBoolean(KEY_ENABLE_MINUS_ONE, true),
+                 true, /* enableHotword */
+                 true /* enablePrewarming */
+         );
++        LauncherApps apps = mLauncher.getSystemService(LauncherApps.class);
++        if (apps != null && apps.isPackageEnabled(FEED_PACKAGE, Process.myUserHandle())) {
++            // libGoogleFeed.jar has no setter: the service package is ClientOptions' only
++            // String field without a final modifier ("b"), read when connecting
++            try {
++                Field pkg = LauncherClient.ClientOptions.class.getDeclaredField("b");
++                pkg.setAccessible(true);
++                pkg.set(options, FEED_PACKAGE);
++            } catch (ReflectiveOperationException | RuntimeException e) {
++                Log.w(TAG, "cannot point the overlay at " + FEED_PACKAGE, e);
++            }
++        }
++        return options;
+     }
+ }
+diff --git a/res/values/lineage_strings.xml b/res/values/lineage_strings.xml
+index f223b4c..5f67938 100644
+--- a/res/values/lineage_strings.xml
++++ b/res/values/lineage_strings.xml
+@@ -59,6 +59,7 @@
+ 
+     <!-- Settings title to show Google Now at -1 screen on launcher. [CHAR LIMIT=50] -->
+     <string name="title_show_google_app">Show Google app</string>
++    <string name="title_show_art_feed">Show art feed</string>
+     <!-- Settings message explaining when the -1 screen is available on an LTR device. [CHAR LIMIT=100] -->
+     <string name="msg_minus_one_on_left">When you swipe right from main home screen</string>
+     <!-- Settings message explaining when the -1 screen is available on an RTL device. [CHAR LIMIT=100] -->
+diff --git a/src/com/android/launcher3/settings/SettingsActivity.java b/src/com/android/launcher3/settings/SettingsActivity.java
+index fdcdfda..58a6d27 100644
+--- a/src/com/android/launcher3/settings/SettingsActivity.java
++++ b/src/com/android/launcher3/settings/SettingsActivity.java
+@@ -97,6 +97,7 @@ public class SettingsActivity extends FragmentActivity
+ 
+     private static final String KEY_MINUS_ONE = "pref_enable_minus_one";
+     private static final String SEARCH_PACKAGE = "com.google.android.googlequicksearchbox";
++    private static final String FEED_PACKAGE = "lineage.rango.artfeed";
+     public static final String KEY_TRUST_APPS = "pref_trust_apps";
+ 
+     private static final String KEY_SUGGESTIONS = "pref_suggestions";
+@@ -367,6 +368,11 @@ public class SettingsActivity extends FragmentActivity
+                     );
+                     return !info.isLargeScreen(info.realBounds);
+                 case KEY_MINUS_ONE:
++                    if (launcherApps != null
++                            && launcherApps.isPackageEnabled(FEED_PACKAGE, myUserHandle())) {
++                        preference.setTitle(R.string.title_show_art_feed);
++                        return true;
++                    }
+                     return launcherApps != null &&
+                             launcherApps.isPackageEnabled(SEARCH_PACKAGE, myUserHandle());
+                 case KEY_SUGGESTIONS:
+-- 
+2.51.2
+

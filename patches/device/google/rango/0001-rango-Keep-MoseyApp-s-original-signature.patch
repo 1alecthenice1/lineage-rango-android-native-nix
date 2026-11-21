@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1alecthenice1 <188545014+1alecthenice1@users.noreply.github.com>
+Date: Sat, 21 Nov 2026 02:51:24 +0000
+Subject: [PATCH] rango: Keep MoseyApp's original signature
+
+MoseyApp (com.google.android.mosey, the Quick Share extension) calls
+Google Play services' Nearby Share API, which only serves Google-signed
+callers. Without ;PRESIGNED it is re-signed with the platform key, and
+every call fails with "SecurityException: Denied access to unsuspend
+method" -> the app crash-loops (every ~12 s on a running device) and
+Quick Share sessions using it drop.
+---
+ rango/proprietary-files.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rango/proprietary-files.txt b/rango/proprietary-files.txt
+index 333cd02..dd328fd 100644
+--- a/rango/proprietary-files.txt
++++ b/rango/proprietary-files.txt
+@@ -177,7 +177,7 @@ system_ext/etc/init/mosey.rc
+ system_ext/etc/permissions/privapp-permissions-com.google.android.mosey.xml
+ system_ext/etc/vintf/manifest/manifest_mosey.xml
+ system_ext/lib64/libmosey_daemon_ffi.so
+-system_ext/priv-app/MoseyApp/MoseyApp.apk
++system_ext/priv-app/MoseyApp/MoseyApp.apk;PRESIGNED
+ 
+ # Radio
+ system_ext/etc/default-permissions/default-permissions-euiccpixel.xml
+-- 
+2.51.2
+

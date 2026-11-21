@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- frame with a hill and a sun, Everforest colours -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#2D353B" android:pathData="M4,4h40v40h-40z" />
+    <path android:fillColor="#A7C080" android:pathData="M8,36l10,-12l7,8l5,-5l10,9v4h-32z" />
+    <path android:fillColor="#DBBC7F" android:pathData="M33,16m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    <path android:strokeColor="#D3C6AA" android:strokeWidth="2" android:pathData="M5,5h38v38h-38z" />
+</vector>

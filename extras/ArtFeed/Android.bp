@@ -1,0 +1,27 @@
+// Art feed: the page left of the home screen (README "Additions to LineageOS").
+// Plain framework APIs only (no AndroidX), so steps/artfeed-dev.sh can build the
+// same sources on the build host for testing.
+android_app {
+    name: "ArtFeed",
+    srcs: ["src/**/*.java"],
+    resource_dirs: ["res"],
+    manifest: "AndroidManifest.xml",
+    sdk_version: "current",
+    min_sdk_version: "34",
+    target_sdk_version: "36",
+    // privileged for START_ACTIVITIES_FROM_BACKGROUND ("open on the museum's site"
+    // from the overlay window); signed with releasekey like our other own APKs
+    privileged: true,
+    system_ext_specific: true,
+    optimize: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-lineage.rango.artfeed.xml"],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-lineage.rango.artfeed.xml",
+    src: "privapp-permissions-lineage.rango.artfeed.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}

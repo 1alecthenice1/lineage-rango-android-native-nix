@@ -42,6 +42,10 @@ PRODUCT_COPY_FILES += vendor/extras/nix/nix.rc:$(TARGET_COPY_OUT_SYSTEM)/etc/ini
 PRODUCT_ARTIFACT_PATH_REQUIREMENT_ALLOWED_LIST += system/etc/init/nix.rc
 SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += vendor/extras/sepolicy/private
 
+# Art feed instead of Google's news feed on the page left of the home screen
+# (extras/ArtFeed; Launcher3 binds it via patches/packages/apps/Launcher3)
+PRODUCT_PACKAGES += ArtFeed
+
 # Updates: no official channel (our recovery only accepts OTAs signed with our
 # key, so offering LineageOS's builds would just fail after a 1.7 GB download).
 # Updates come from steps/update.sh (Updater local update or recovery

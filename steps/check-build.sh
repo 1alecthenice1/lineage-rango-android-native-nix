@@ -67,6 +67,21 @@ if svc:
 else:
     r(False, "services.jar not found")
 
+print("== build 12+: Quick Share extension keeps Google's signature")
+# re-signed MoseyApp crash-looped ("Denied access to unsuspend method" from GMS) — patches/device/google/rango
+r(re.search(r'^name="MoseyApp\.apk" certificate="PRESIGNED"', read("META/apkcerts.txt"), re.M) is not None, "apkcerts: MoseyApp.apk PRESIGNED")
+
+print("== build 12+: art feed on the -1 page")
+r("SYSTEM_EXT/priv-app/ArtFeed/ArtFeed.apk" in names, "ArtFeed.apk in system_ext/priv-app")
+r("SYSTEM_EXT/etc/permissions/privapp-permissions-lineage.rango.artfeed.xml" in names, "ArtFeed privapp-permissions xml (a user build won't boot without it)")
+if "SYSTEM_EXT/priv-app/ArtFeed/ArtFeed.apk" in names:
+    r(dex_has("SYSTEM_EXT/priv-app/ArtFeed/ArtFeed.apk", "com.google.android.libraries.launcherclient.ILauncherOverlay"), "ArtFeed: overlay service compiled in")
+l3 = "SYSTEM_EXT/priv-app/Launcher3QuickStep/Launcher3QuickStep.apk"
+if l3 in names:
+    r(dex_has(l3, "lineage.rango.artfeed"), "Launcher3: points the -1 page at the art feed (patch)")
+else:
+    r(False, "Launcher3QuickStep.apk not found")
+
 print("ALL PASSED" if not fails else f"{fails} FAILED")
 sys.exit(1 if fails else 0)
 EOF

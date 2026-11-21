@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Prepare the LineageOS Gerrit submission of the fingerprint enrollment fix
 # (LineageOS issue #8005) — stops BEFORE pushing; the push is the user's step.
-#   ./steps/lineage-submit.sh <gerrit-username>
+#   ./steps/lineage-submit.sh <gerrit-username> <email verified on your Gerrit account>
+# The email becomes committer of both commits and author of ours (Gerrit checks
+# both against the account; it is public in review/git history). Not stored here.
 # Builds ~/lineage-submit/Settings on top of current lineage-24.0 with:
 #   1. GrapheneOS's commit 30dae1da04 (Dmitry Muhomor, 2024), cherry-picked with
 #      original authorship, LineageOS-style subject, "(cherry picked from …)"
@@ -10,10 +12,10 @@
 set -euo pipefail
 ok()   { printf '\033[32m✓ %s\033[0m\n' "$*"; }
 fail() { printf '\033[31m✗ %s\033[0m\n' "$*"; exit 1; }
-user=${1:?usage: $0 <your review.lineageos.org username>}
+user=${1:?usage: $0 <gerrit-username> <email verified on Gerrit>}
+email=${2:?usage: $0 <gerrit-username> <email verified on Gerrit>}
 repo=$(cd "$(dirname "$0")/.." && pwd)
 dir=$HOME/lineage-submit/Settings
-noreply="188545014+1alecthenice1@users.noreply.github.com"
 gos=30dae1da048e7ed64b1d0af4bb885fe4ad13e343
 
 [ -e "$dir" ] && fail "$dir exists — remove it first (rm -rf $dir) to start clean"
@@ -22,7 +24,7 @@ echo "cloning LineageOS Settings (lineage-24.0, last 50 commits)…"
 git clone -q --depth 50 -b lineage-24.0 https://github.com/LineageOS/android_packages_apps_Settings "$dir"
 cd "$dir"
 git config user.name 1alecthenice1
-git config user.email "$noreply"
+git config user.email "$email"   # committer of both commits
 curl -fsSL -o .git/hooks/commit-msg https://review.lineageos.org/tools/hooks/commit-msg && chmod +x .git/hooks/commit-msg
 
 # 1: GrapheneOS's commit, authorship kept (git am keeps From:/Date:)
@@ -50,7 +52,8 @@ EOF
 
 # 2: our fallback
 git am -q --3way "$repo"/patches/packages/apps/Settings/0002-*.patch || fail "fallback patch doesn't apply"
-git commit -q --amend -F - <<'EOF'
+# ours: author = the Gerrit account (the patch file carries the GitHub noreply address)
+git commit -q --amend --reset-author -F - <<'EOF'
 Settings: Fall back to framework vendor fingerprint strings
 
 Settings' own fingerprint_acquired_vendor array is empty unless a device
@@ -66,7 +69,7 @@ Test: rango, LineageOS 24: repeated touches on one spot -> HAL "Report
 Assisted-by: LLM
 EOF
 
-git log --format='%h %an <%ae>%n    %s%n    %(trailers:key=Change-Id,valueonly)' -2
+git log --format='%h author %an <%ae>, committer %cn <%ce>%n    %s%n    %(trailers:key=Change-Id,valueonly)' -2
 git log -2 --format=%B | grep -c '^Change-Id: I' | grep -qx 2 || fail "Change-Id missing (commit-msg hook not run?)"
 ok "branch ready in $dir (2 commits on lineage-24.0)"
 cat <<EOF

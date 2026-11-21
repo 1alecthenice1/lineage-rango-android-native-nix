@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Privileged permissions of the art feed (extras/ArtFeed). A user build refuses to
+     boot when a priv-app requests a privileged permission missing here. -->
+<permissions>
+    <privapp-permissions package="lineage.rango.artfeed">
+        <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
+    </privapp-permissions>
+</permissions>
